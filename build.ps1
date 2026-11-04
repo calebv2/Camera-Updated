@@ -12,6 +12,9 @@ $out = Join-Path $PSScriptRoot 'dist'
 New-Item -ItemType Directory -Force $out | Out-Null
 $references = @(Get-ChildItem -LiteralPath $managed -Filter '*.dll' | ForEach-Object { '/r:' + $_.FullName })
 $references += '/r:' + (Join-Path $loader 'MelonLoader.dll')
+$harmony = Join-Path $loader '0Harmony.dll'
+if (-not (Test-Path -LiteralPath $harmony)) { throw 'MelonLoader Harmony assembly not found.' }
+$references += '/r:' + $harmony
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Filter '*.cs' | ForEach-Object { $_.FullName })
 $arguments = @('/target:library', '/nostdlib+', '/noconfig', '/warn:4', ('/out:' + (Join-Path $out 'ATTSmoothCamera.dll'))) + $references + $sources
 & $compiler $arguments

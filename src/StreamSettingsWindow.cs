@@ -6,7 +6,7 @@ namespace ATTSmoothCamera
 {
     public sealed partial class StreamCameraMod
     {
-        static readonly string[] TabNames = { "Camera", "Presets", "Paths", "Photos", "Help" };
+        static readonly string[] TabNames = { "Camera", "Presets", "Paths", "Photos", "Desktop", "Help" };
         public override void OnGUI()
         {
             if (!initialized) return;
@@ -15,6 +15,7 @@ namespace ATTSmoothCamera
                 try { GUI.depth = -30000; GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), cleanTarget, ScaleMode.ScaleToFit, false); }
                 finally { GUI.depth = previousDepth; }
             }
+            if (desktop != null && desktop.Requested && !menu) DrawDesktopHud();
             if (!menu) return;
             theme.Ensure();
             window.width = Mathf.Min(640f, Mathf.Max(300f, Screen.width - 32f));
@@ -28,7 +29,7 @@ namespace ATTSmoothCamera
             GUILayout.BeginHorizontal();
             GUILayout.BeginVertical();
             GUILayout.Label("Stream Camera", theme.Title);
-            GUILayout.Label("Desktop streaming controls  |  F6", theme.Subtitle);
+            GUILayout.Label("Camera + optional desktop play  |  F6", theme.Subtitle);
             GUILayout.EndVertical();
             if (GUILayout.Button("Close", theme.Button, GUILayout.Width(68f))) menu = false;
             GUILayout.EndHorizontal();
@@ -60,12 +61,13 @@ namespace ATTSmoothCamera
                 case 1: DrawPresetsTab(); break;
                 case 2: DrawPathsTab(); break;
                 case 3: DrawPhotosTab(); break;
+                case 4: DrawDesktopTab(); break;
                 default: DrawHelpTab(); break;
             }
             GUILayout.EndScrollView();
             GUILayout.Space(8f);
             GUILayout.BeginHorizontal();
-            GUILayout.Label("F6 opens or closes all camera controls", theme.Muted);
+            GUILayout.Label("F6 opens or closes camera and desktop settings", theme.Muted);
             GUILayout.FlexibleSpace();
             if (GUILayout.Button("Save startup view", theme.Button)) Run(delegate { startupMode.Value = mode; cfg.SaveToFile(false); Notice("Current camera settings saved for your next launch."); });
             GUILayout.EndHorizontal();
@@ -212,12 +214,15 @@ namespace ATTSmoothCamera
         }
         void DrawHelpTab()
         {
-            Heading("READY TO STREAM", "F6 is the only shortcut used by this mod.");
+            Heading("READY TO STREAM", "F6 opens the settings. Desktop gameplay keys apply only when enabled.");
             BeginCard("GET STARTED");
             GUILayout.Label("1. Enable the camera and select a shot.\n2. In OBS, capture the A Township Tale desktop window.\n3. Start clean capture to hide desktop overlays.\n4. Press F6 whenever you need the controls again.", theme.Body);
             EndCard();
             BeginCard("WHAT STAYS YOURS");
-            GUILayout.Label("The headset view, character controls and server state stay native. The camera follows only your character. No server install or console token is needed.", theme.Body);
+            GUILayout.Label("Streaming camera mode leaves your headset and character controls unchanged. Desktop play is a separate opt-in on the Desktop tab. The camera follows only your character. No server install or console token is needed.", theme.Body);
+            EndCard();
+            BeginCard("PLAY ON YOUR MONITOR");
+            GUILayout.Label("Join as a normal character, open Desktop and enable flatscreen controls. Close settings and click to capture the mouse. WASD moves and mouse movement looks around. Escape releases the mouse; F6 opens settings. Opening settings, losing focus or opening Prefabulator pauses desktop input.", theme.Body);
             EndCard();
             BeginCard("CAMERA PATHS");
             GUILayout.Label("Paths save camera movement, not a recording of the game. Other players and objects remain live. Stay near the route to keep its world chunks loaded. Teleporting or changing characters stops playback and recording.", theme.Body);

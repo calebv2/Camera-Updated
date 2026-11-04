@@ -7,7 +7,7 @@ using UnityEngine.InputSystem;
 using UnityEngine.XR;
 using Alta.Character;
 
-[assembly: MelonInfo(typeof(ATTSmoothCamera.StreamCameraMod), "ATT Smooth Stream Camera", "0.2.1", "VManOP")]
+[assembly: MelonInfo(typeof(ATTSmoothCamera.StreamCameraMod), "ATT Smooth Stream Camera", "0.3.0", "VManOP")]
 [assembly: MelonGame("Alta", "A Township Tale")]
 
 namespace ATTSmoothCamera
@@ -20,6 +20,9 @@ namespace ATTSmoothCamera
         MelonPreferences_Entry<bool> enabledPref, avoidWalls, horizonLock, smartFraming;
         MelonPreferences_Entry<StreamMode> startupMode;
         MelonPreferences_Entry<float> distance, height, shoulder, fov, positionHalfLife, rotationHalfLife, orbitSpeed, snapDistance, transitionSeconds;
+        MelonPreferences_Entry<float> desktopSensitivity, desktopHeight, desktopCrouchHeight, desktopReach;
+        MelonPreferences_Entry<bool> desktopInvertY, desktopToggleGrips;
+        DesktopControlSession desktop;
         Camera output, source;
         PlayerController player;
         readonly HeadRenderScope headScope = new HeadRenderScope();
@@ -63,6 +66,13 @@ namespace ATTSmoothCamera
             avoidWalls = cfg.CreateEntry<bool>("AvoidWalls", true);
             horizonLock = cfg.CreateEntry<bool>("HorizonLock", true);
             smartFraming = cfg.CreateEntry<bool>("SmartFraming", true);
+            desktopSensitivity = cfg.CreateEntry<float>("DesktopSensitivity", .12f);
+            desktopInvertY = cfg.CreateEntry<bool>("DesktopInvertY", false);
+            desktopHeight = cfg.CreateEntry<float>("DesktopStandingHeight", 1.65f);
+            desktopCrouchHeight = cfg.CreateEntry<float>("DesktopCrouchHeight", 1.05f);
+            desktopReach = cfg.CreateEntry<float>("DesktopHandReach", .55f);
+            desktopToggleGrips = cfg.CreateEntry<bool>("DesktopToggleGrips", true);
+            desktop = new DesktopControlSession(HarmonyInstance);
             dataDirectory = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "UserData/ATTSmoothCamera");
             bool newLibrary = !File.Exists(Path.Combine(dataDirectory, "camera-library.xml"));
             library = CameraLibrary.Load(dataDirectory);
@@ -72,7 +82,7 @@ namespace ATTSmoothCamera
             Camera.onPreCull += BeforeCamera;
             Camera.onPostRender += AfterCamera;
             initialized = true;
-            MelonLogger.Msg("Streaming camera 0.2.1 ready. F6 opens every camera control. No other camera hotkeys are registered.");
+            MelonLogger.Msg("Camera Updated 0.3.0 ready. F6 opens camera and optional desktop controls. Desktop gameplay starts off.");
             if (newLibrary) Run(delegate {
                 library.UpsertPreset(new CameraPreset { Name = "Smooth view", Mode = 0 });
                 library.UpsertPreset(new CameraPreset { Name = "Full body", Mode = 1, Distance = 3.2f });
@@ -89,6 +99,18 @@ namespace ATTSmoothCamera
                 if (cleanCapture) { SetCleanCapture(false); menu = true; }
                 else menu = !menu;
             }
+            try {
+                desktop.Sensitivity = Safe(desktopSensitivity.Value, .03f, .4f, .12f);
+                desktop.InvertY = desktopInvertY.Value;
+                desktop.StandingHeight = Safe(desktopHeight.Value, 1.2f, 2.1f, 1.65f);
+                desktop.CrouchHeight = Safe(desktopCrouchHeight.Value, .65f, 1.3f, 1.05f);
+                desktop.HandReach = Safe(desktopReach.Value, .3f, .85f, .55f);
+                desktop.ToggleGrips = desktopToggleGrips.Value;
+                desktop.Update(menu || !enabled || EditorCameraActive(true) || PathHasControl || frozenPhoto);
+            } catch (Exception error) {
+                desktop.SetRequested(false);
+                Notice("Desktop controls stopped: " + error.Message);
+            }
         }
 
         public override void OnLateUpdate()
@@ -96,9 +118,11 @@ namespace ATTSmoothCamera
             if (!initialized) return;
             EndRenderScope();
             try {
+                desktop.LateUpdate();
                 Tick();
                 if (photoRequested) { photoRequested = false; CapturePhoto(); }
             } catch (Exception error) {
+                desktop.SetRequested(false);
                 ReleaseOutput();
                 status = "Camera paused: " + error.GetType().Name;
                 if (Time.unscaledTime >= nextError) { nextError = Time.unscaledTime + 10f; MelonLogger.Warning(status + ": " + error.Message); }
@@ -195,6 +219,8 @@ namespace ATTSmoothCamera
             Vector3 next;
             Quaternion facing;
             float nextFov;
+            bool directDesktop = firstPerson && desktop.Owns(current) && !pathFrame && !frozenPhoto;
+            if (directDesktop) transitionActive = false;
             if (transitionActive && !snap && !pathFrame) {
                 float t = Mathf.Clamp01((Time.unscaledTime - transitionStart) / Safe(transitionSeconds.Value, .05f, 3f, .65f));
                 float blend = t * t * (3f - 2f * t);
@@ -203,8 +229,8 @@ namespace ATTSmoothCamera
                 nextFov = Mathf.Lerp(transitionFov, wantedFov, blend);
                 if (t >= 1f) transitionActive = false;
             } else {
-                float a = snap || pathFrame || frozenPhoto ? 1f : CameraMath.Blend(Safe(positionHalfLife.Value, .01f, 2f, .08f), dt);
-                float b = snap || pathFrame || frozenPhoto ? 1f : CameraMath.Blend(Safe(rotationHalfLife.Value, .01f, 2f, .12f), dt);
+                float a = snap || pathFrame || frozenPhoto || directDesktop ? 1f : CameraMath.Blend(Safe(positionHalfLife.Value, .01f, 2f, .08f), dt);
+                float b = snap || pathFrame || frozenPhoto || directDesktop ? 1f : CameraMath.Blend(Safe(rotationHalfLife.Value, .01f, 2f, .12f), dt);
                 next = Vector3.Lerp(output.transform.position, desired, a);
                 facing = Quaternion.Slerp(output.transform.rotation, rotation, b);
                 nextFov = Mathf.Lerp(output.fieldOfView, wantedFov, b);
@@ -355,6 +381,18 @@ namespace ATTSmoothCamera
             enabled = value; enabledPref.Value = value;
             if (!value) { if (recording) StopRecording(); StopPath(false); ReleaseOutput(); }
         }
+        void SetDesktopEnabled(bool value)
+        {
+            if (value && !desktop.Requested) { ChangeMode(StreamMode.SmoothFirstPerson); transitionActive = false; }
+            desktop.SetRequested(value);
+        }
+        void ResumeDesktop()
+        {
+            if (!desktop.Requested) SetDesktopEnabled(true);
+            else ChangeMode(mode);
+            menu = false;
+            Notice("Click the game view to capture the mouse. Escape releases it; F6 opens settings.");
+        }
         static StreamMode ValidMode(StreamMode value) { return (int)value >= 0 && (int)value < 5 ? value : StreamMode.SmoothFirstPerson; }
         static float Safe(float value, float min, float max, float fallback) { return Single.IsNaN(value) || Single.IsInfinity(value) ? fallback : Mathf.Clamp(value, min, max); }
         static bool Finite(float value) { return !Single.IsNaN(value) && !Single.IsInfinity(value); }
@@ -394,6 +432,7 @@ namespace ATTSmoothCamera
         public override void OnDeinitializeMelon()
         {
             if (!initialized) return;
+            desktop.Dispose();
             Camera.onPreCull -= BeforeCamera; Camera.onPostRender -= AfterCamera;
             ReleaseOutput(); photoScope.End();
             if (mirrorOwned) {
