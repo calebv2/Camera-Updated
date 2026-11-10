@@ -7,7 +7,7 @@ using UnityEngine.InputSystem;
 using UnityEngine.XR;
 using Alta.Character;
 
-[assembly: MelonInfo(typeof(ATTSmoothCamera.StreamCameraMod), "ATT Smooth Stream Camera", "0.3.0", "VManOP")]
+[assembly: MelonInfo(typeof(ATTSmoothCamera.StreamCameraMod), "ATT Smooth Stream Camera", "0.3.1", "VManOP")]
 [assembly: MelonGame("Alta", "A Township Tale")]
 
 namespace ATTSmoothCamera
@@ -25,6 +25,7 @@ namespace ATTSmoothCamera
         DesktopControlSession desktop;
         Camera output, source;
         PlayerController player;
+        Transform firstPersonHead;
         readonly HeadRenderScope headScope = new HeadRenderScope();
         readonly HeadRenderScope photoScope = new HeadRenderScope();
         readonly CameraAvoidance obstacles = new CameraAvoidance();
@@ -82,7 +83,7 @@ namespace ATTSmoothCamera
             Camera.onPreCull += BeforeCamera;
             Camera.onPostRender += AfterCamera;
             initialized = true;
-            MelonLogger.Msg("Camera Updated 0.3.0 ready. F6 opens camera and optional desktop controls. Desktop gameplay starts off.");
+            MelonLogger.Msg("Camera Updated 0.3.1 ready. F6 opens camera and optional desktop controls. Desktop gameplay starts off.");
             if (newLibrary) Run(delegate {
                 library.UpsertPreset(new CameraPreset { Name = "Smooth view", Mode = 0 });
                 library.UpsertPreset(new CameraPreset { Name = "Full body", Mode = 1, Distance = 3.2f });
@@ -169,6 +170,7 @@ namespace ATTSmoothCamera
             if (!mirrorOwned) { mirrorBefore = XRSettings.showDeviceView; mirrorOwned = true; }
             XRSettings.showDeviceView = false;
             Vector3 head = current.Head.position;
+            Transform eye = source == current.Camera ? source.transform : current.Head;
             float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.1f);
             bool snap = !seeded || CameraMath.ShouldSnap((head - lastHead).sqrMagnitude, Safe(snapDistance.Value, 1f, 100f, 5f), changed);
             if (snap) transitionActive = false;
@@ -182,8 +184,8 @@ namespace ATTSmoothCamera
             if (pathFrame) { firstPerson = (head - desired).sqrMagnitude < .35f * .35f; transitionActive = false; }
             else if (frozenPhoto) { desired = frozenPosition; rotation = frozenRotation; firstPerson = (head - desired).sqrMagnitude < .35f * .35f; }
             else if (firstPerson) {
-                desired = head;
-                rotation = horizonLock.Value ? LevelRotation(current.Head.rotation) : current.Head.rotation;
+                desired = eye.position;
+                rotation = horizonLock.Value ? LevelRotation(eye.rotation) : eye.rotation;
             } else {
                 float yaw = current.Head.eulerAngles.y;
                 smoothYaw = snap ? yaw : Mathf.LerpAngle(smoothYaw, yaw, CameraMath.Blend(Safe(rotationHalfLife.Value, .01f, 2f, .12f), dt));
@@ -211,7 +213,7 @@ namespace ATTSmoothCamera
                 if (avoidWalls.Value) { desired = obstacles.Resolve(current, pivot, desired, dt, snap || avoidanceReset); avoidanceReset = false; }
                 Vector3 look = pivot - desired;
                 if (look.sqrMagnitude < .35f * .35f) {
-                    desired = head; rotation = horizonLock.Value ? LevelRotation(current.Head.rotation) : current.Head.rotation;
+                    desired = eye.position; rotation = horizonLock.Value ? LevelRotation(eye.rotation) : eye.rotation;
                     firstPerson = true; snap = true;
                 } else rotation = Quaternion.LookRotation(look, Vector3.up);
             }
@@ -219,8 +221,12 @@ namespace ATTSmoothCamera
             Vector3 next;
             Quaternion facing;
             float nextFov;
-            bool directDesktop = firstPerson && desktop.Owns(current) && !pathFrame && !frozenPhoto;
-            if (directDesktop) transitionActive = false;
+            bool headAttached = firstPerson && !pathFrame && !frozenPhoto;
+            bool directDesktop = headAttached && desktop.Owns(current);
+            if (headAttached && transitionActive) {
+                transitionActive = false;
+                snap = true;
+            }
             if (transitionActive && !snap && !pathFrame) {
                 float t = Mathf.Clamp01((Time.unscaledTime - transitionStart) / Safe(transitionSeconds.Value, .05f, 3f, .65f));
                 float blend = t * t * (3f - 2f * t);
@@ -229,15 +235,15 @@ namespace ATTSmoothCamera
                 nextFov = Mathf.Lerp(transitionFov, wantedFov, blend);
                 if (t >= 1f) transitionActive = false;
             } else {
-                float a = snap || pathFrame || frozenPhoto || directDesktop ? 1f : CameraMath.Blend(Safe(positionHalfLife.Value, .01f, 2f, .08f), dt);
+                float a = snap || pathFrame || frozenPhoto ? 1f : CameraMath.Blend(Safe(positionHalfLife.Value, .01f, 2f, .08f), dt);
                 float b = snap || pathFrame || frozenPhoto || directDesktop ? 1f : CameraMath.Blend(Safe(rotationHalfLife.Value, .01f, 2f, .12f), dt);
-                next = Vector3.Lerp(output.transform.position, desired, a);
+                next = headAttached ? desired : Vector3.Lerp(output.transform.position, desired, a);
                 facing = Quaternion.Slerp(output.transform.rotation, rotation, b);
                 nextFov = Mathf.Lerp(output.fieldOfView, wantedFov, b);
             }
             if (!firstPerson && !pathFrame && !frozenPhoto && avoidWalls.Value) {
                 next = obstacles.Clamp(current, pivot, next);
-                if ((next - pivot).sqrMagnitude < .35f * .35f) { next = head; facing = horizonLock.Value ? LevelRotation(current.Head.rotation) : current.Head.rotation; firstPerson = true; }
+                if ((next - pivot).sqrMagnitude < .35f * .35f) { next = eye.position; facing = horizonLock.Value ? LevelRotation(eye.rotation) : eye.rotation; firstPerson = true; }
             }
             if (pathFrame && !initialPathCut && seeded && avoidWalls.Value) {
                 Vector3 limited = obstacles.Clamp(current, output.transform.position, next);
@@ -249,8 +255,8 @@ namespace ATTSmoothCamera
                     firstPerson = (head - next).sqrMagnitude < .35f * .35f;
                 }
             }
-            bool settledFirstPerson = mode == StreamMode.SmoothFirstPerson && !transitionActive && !pathFrame && !frozenPhoto;
-            showHeadThisFrame = !settledFirstPerson && (next - head).sqrMagnitude >= .45f * .45f;
+            firstPersonHead = firstPerson && !pathFrame && !frozenPhoto ? eye : null;
+            showHeadThisFrame = firstPersonHead == null && (next - head).sqrMagnitude >= .45f * .45f;
             output.transform.SetPositionAndRotation(next, facing);
             output.fieldOfView = Safe(nextFov, 35f, 110f, 75f);
             EnsureCleanTarget();
@@ -410,7 +416,16 @@ namespace ATTSmoothCamera
         void BeforeCamera(Camera camera)
         {
             if (photoInProgress) return;
-            if (camera == output && output != null && output.enabled && enabled) { EndRenderScope(); renderingOutput = true; ApplyHeadScope(); }
+            if (camera == output && output != null && output.enabled && enabled) {
+                EndRenderScope();
+                // Tracking can update the head again after LateUpdate.
+                if (firstPersonHead != null && player == PlayerController.Current) {
+                    Vector3 position = firstPersonHead.position;
+                    if (Finite(position)) output.transform.position = position;
+                }
+                renderingOutput = true;
+                ApplyHeadScope();
+            }
             else if (renderingOutput) { headScope.End(); nestedCameras++; }
             else headScope.End();
         }
@@ -424,6 +439,7 @@ namespace ATTSmoothCamera
         void ReleaseOutput()
         {
             EndRenderScope();
+            firstPersonHead = null;
             if (output != null) output.enabled = false;
             if (mirrorOwned && !EditorCameraActive(true)) { XRSettings.showDeviceView = mirrorBefore; mirrorOwned = false; }
             seeded = false; transitionActive = false;

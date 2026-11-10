@@ -103,7 +103,7 @@ namespace ATTSmoothCamera
         }
         void DrawCameraTab()
         {
-            Heading("CHOOSE YOUR SHOT", "Switching views uses a smooth camera transition.");
+            Heading("CHOOSE YOUR SHOT", "First-person attaches to your head as soon as you select it.");
             for (int row = 0; row < 2; row++) {
                 GUILayout.BeginHorizontal();
                 for (int col = 0; col < 2; col++) { StreamMode shot = (StreamMode)(row * 2 + col); if (ActionButton(ModeName(shot), mode == shot && !PathHasControl && !frozenPhoto)) ChangeMode(shot); }
@@ -122,7 +122,7 @@ namespace ATTSmoothCamera
             if (smartFraming.Value) GUILayout.Label("Distance is a minimum. Smart framing can pull back to fit your pose and tools.", theme.Muted);
             EndCard();
             BeginCard("MOTION");
-            positionHalfLife.Value = NiceSlider("Position smoothing", positionHalfLife.Value, .01f, 2f, " s");
+            positionHalfLife.Value = NiceSlider("Third-person position smoothing", positionHalfLife.Value, .01f, 2f, " s");
             rotationHalfLife.Value = NiceSlider("Look smoothing", rotationHalfLife.Value, .01f, 2f, " s");
             transitionSeconds.Value = NiceSlider("View transition", transitionSeconds.Value, .05f, 3f, " s");
             orbitSpeed.Value = NiceSlider("Orbit speed", orbitSpeed.Value, -90f, 90f, " deg/s");

@@ -4,7 +4,7 @@ A client-only camera and optional desktop gameplay mode for **A Township Tale**.
 
 ## Install
 
-1. Open the [release page](https://github.com/calebv2/Camera-Updated/releases/tag/v0.3.0) and download **Camera-Updated-0.3.0.zip** under Assets.
+1. Open the [release page](https://github.com/calebv2/Camera-Updated/releases/tag/v0.3.1) and download **Camera-Updated-0.3.1.zip** under Assets.
 2. Close the player game. Copy `Mods/ATTSmoothCamera.dll` into the player's `Mods` folder, replacing the previous camera DLL.
 3. Start and join normally through your launcher. Press **F6**.
 
@@ -36,7 +36,7 @@ Adjust sensitivity, invert look, eye heights, hand reach and grip behavior on De
 
 ## Streaming tools
 
-- **Camera:** smooth first-person, Behind, Front, Orbit and Crafting close-up. Smart framing includes your head, body, hands and tools. Adjust framing, smoothing, field of view and transitions. Horizon lock and wall avoidance are available.
+- **Camera:** smooth first-person, Behind, Front, Orbit and Crafting close-up. First-person stays at your head as you move, with look smoothing for VR turns. Smart framing includes your head, body, hands and tools. Adjust framing, smoothing, field of view and transitions. Horizon lock and wall avoidance are available.
 - **Presets:** save complete camera views and load them with one click.
 - **Paths:** record camera movement or add individual shots; save, play, pause, loop and adjust speed.
 - **Photos:** hold the camera while you pose and save a PNG at 1x-4x desktop resolution.
@@ -71,4 +71,4 @@ Output: `dist/ATTSmoothCamera.dll`. The build does not install it. Game and Melo
 
 ## Preview status
 
-Version 0.3.0 is a preview. Desktop gameplay needs live in-game testing. Keyboard hands cannot reproduce every VR gesture; some tool and crafting actions require manual hand positioning. The streaming camera remains available with desktop controls off.
+Version 0.3.1 is a preview. Desktop gameplay needs live in-game testing. Keyboard hands cannot reproduce every VR gesture; some tool and crafting actions require manual hand positioning. The streaming camera remains available with desktop controls off.
