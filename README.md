@@ -4,7 +4,7 @@ A client-only camera and optional desktop gameplay mode for **A Township Tale**.
 
 ## Install
 
-1. Open the [release page](https://github.com/calebv2/Camera-Updated/releases/tag/v0.3.1) and download **Camera-Updated-0.3.1.zip** under Assets.
+1. Open the [release page](https://github.com/calebv2/Camera-Updated/releases/tag/v0.3.2) and download **Camera-Updated-0.3.2.zip** under Assets.
 2. Close the player game. Copy `Mods/ATTSmoothCamera.dll` into the player's `Mods` folder, replacing the previous camera DLL.
 3. Start and join normally through your launcher. Press **F6**.
 
@@ -46,6 +46,8 @@ Selecting a camera view enables it. **Save startup view** keeps camera and deskt
 
 Paths move only the camera. Game activity stays live. Keep your player near the route so its chunks are loaded. Teleports or character changes stop recording and playback. A finished path holds its last shot. At least two points are required; limits are 32 presets, 16 paths and 2,048 points per path.
 
+Teleport recovery follows native teleport and forced-move events, including short transfers and loading pauses. A transfer releases held photo or path views and reattaches the live camera at the destination. Unsaved recording points remain available to save.
+
 Photos exclude the settings menu and are limited to 7,680 pixels per side / about 33 megapixels. Holding the camera does not freeze the game. Clean capture follows the window's aspect ratio, up to 3840x2160.
 
 ## Saved files
@@ -71,4 +73,4 @@ Output: `dist/ATTSmoothCamera.dll`. The build does not install it. Game and Melo
 
 ## Preview status
 
-Version 0.3.1 is a preview. Desktop gameplay needs live in-game testing. Keyboard hands cannot reproduce every VR gesture; some tool and crafting actions require manual hand positioning. The streaming camera remains available with desktop controls off.
+Version 0.3.2 is a preview. Desktop gameplay and teleport recovery need live in-game testing. Keyboard hands cannot reproduce every VR gesture; some tool and crafting actions require manual hand positioning. The streaming camera remains available with desktop controls off.

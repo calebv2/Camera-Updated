@@ -7,7 +7,7 @@ using UnityEngine.InputSystem;
 using UnityEngine.XR;
 using Alta.Character;
 
-[assembly: MelonInfo(typeof(ATTSmoothCamera.StreamCameraMod), "ATT Smooth Stream Camera", "0.3.1", "VManOP")]
+[assembly: MelonInfo(typeof(ATTSmoothCamera.StreamCameraMod), "ATT Smooth Stream Camera", "0.3.2", "VManOP")]
 [assembly: MelonGame("Alta", "A Township Tale")]
 
 namespace ATTSmoothCamera
@@ -83,7 +83,7 @@ namespace ATTSmoothCamera
             Camera.onPreCull += BeforeCamera;
             Camera.onPostRender += AfterCamera;
             initialized = true;
-            MelonLogger.Msg("Camera Updated 0.3.1 ready. F6 opens camera and optional desktop controls. Desktop gameplay starts off.");
+            MelonLogger.Msg("Camera Updated 0.3.2 ready. F6 opens camera and optional desktop controls. Desktop gameplay starts off.");
             if (newLibrary) Run(delegate {
                 library.UpsertPreset(new CameraPreset { Name = "Smooth view", Mode = 0 });
                 library.UpsertPreset(new CameraPreset { Name = "Full body", Mode = 1, Distance = 3.2f });
@@ -101,6 +101,7 @@ namespace ATTSmoothCamera
                 else menu = !menu;
             }
             try {
+                WatchLocomotion(PlayerController.Current);
                 desktop.Sensitivity = Safe(desktopSensitivity.Value, .03f, .4f, .12f);
                 desktop.InvertY = desktopInvertY.Value;
                 desktop.StandingHeight = Safe(desktopHeight.Value, 1.2f, 2.1f, 1.65f);
@@ -132,22 +133,23 @@ namespace ATTSmoothCamera
 
         void Tick()
         {
-            if (!enabled) { ReleaseOutput(); status = "Camera off. Enable it in F6 settings."; return; }
             PlayerController current = PlayerController.Current;
+            WatchLocomotion(current);
             if (current == null || !current.IsLocalPlayer || current.Head == null || !current.IsAlive) {
                 ReleaseOutput(); player = null; status = "Waiting for your living player..."; return;
             }
-            bool changed = player != current, sourceChanged = false;
-            bool teleported = seeded && CameraMath.ShouldSnap((current.Head.position - lastHead).sqrMagnitude,
-                Safe(snapDistance.Value, 1f, 100f, 5f), changed);
-            if (teleported) {
-                avoidanceReset = true;
-                if (recording) { StopRecording(); Notice("Recording stopped after a teleport or character change. Save the captured points on Paths."); }
-                StopPath(false); frozenPhoto = false;
+            Transform eye = LiveEye(current);
+            Vector3 head = current.Head.position;
+            if (!Finite(head) || !Finite(eye.position) || !Finite(current.transform.position)) {
+                ReleaseOutput(); status = "Waiting for a valid player position..."; return;
             }
-            if (changed || Time.unscaledTime >= nextProbe) {
+            bool relocated = UpdateFollowTarget(current, eye);
+            if (!enabled) { ReleaseOutput(); status = "Camera off. Enable it in F6 settings."; return; }
+            bool changed = player != current, sourceChanged = false;
+            if (changed || relocated || source == null || !source.gameObject.activeInHierarchy ||
+                source != current.Camera || Time.unscaledTime >= nextProbe) {
                 player = current;
-                if (changed) { leftTool = new Renderer[0]; rightTool = new Renderer[0]; nextTools = 0f; }
+                if (changed || relocated) { leftTool = new Renderer[0]; rightTool = new Renderer[0]; nextTools = 0f; }
                 Camera nextSource = FindSource(current);
                 sourceChanged = source != nextSource;
                 source = nextSource;
@@ -169,8 +171,6 @@ namespace ATTSmoothCamera
             EnsureOutput(changed || sourceChanged);
             if (!mirrorOwned) { mirrorBefore = XRSettings.showDeviceView; mirrorOwned = true; }
             XRSettings.showDeviceView = false;
-            Vector3 head = current.Head.position;
-            Transform eye = source == current.Camera ? source.transform : current.Head;
             float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.1f);
             bool snap = !seeded || CameraMath.ShouldSnap((head - lastHead).sqrMagnitude, Safe(snapDistance.Value, 1f, 100f, 5f), changed);
             if (snap) transitionActive = false;
@@ -278,6 +278,12 @@ namespace ATTSmoothCamera
                 if (squared < best) { nearest = camera; best = squared; }
             }
             return nearest;
+        }
+        Transform LiveEye(PlayerController current)
+        {
+            Camera camera = current.Camera;
+            return camera != null && camera != output && camera.gameObject.activeInHierarchy
+                ? camera.transform : current.Head;
         }
         bool EditorCameraActive(bool refresh = false)
         {
@@ -419,7 +425,9 @@ namespace ATTSmoothCamera
             if (camera == output && output != null && output.enabled && enabled) {
                 EndRenderScope();
                 // Tracking can update the head again after LateUpdate.
-                if (firstPersonHead != null && player == PlayerController.Current) {
+                if (firstPersonHead != null && player != null && player == PlayerController.Current &&
+                    player.IsLocalPlayer && player.IsAlive && player.Head != null) {
+                    firstPersonHead = LiveEye(player);
                     Vector3 position = firstPersonHead.position;
                     if (Finite(position)) output.transform.position = position;
                 }
@@ -448,6 +456,7 @@ namespace ATTSmoothCamera
         public override void OnDeinitializeMelon()
         {
             if (!initialized) return;
+            StopWatchingLocomotion();
             desktop.Dispose();
             Camera.onPreCull -= BeforeCamera; Camera.onPostRender -= AfterCamera;
             ReleaseOutput(); photoScope.End();
