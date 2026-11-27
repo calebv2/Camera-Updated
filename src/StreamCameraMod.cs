@@ -6,8 +6,9 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.XR;
 using Alta.Character;
+using Alta.Chunks;
 
-[assembly: MelonInfo(typeof(ATTSmoothCamera.StreamCameraMod), "ATT Smooth Stream Camera", "0.3.2", "VManOP")]
+[assembly: MelonInfo(typeof(ATTSmoothCamera.StreamCameraMod), "ATT Smooth Stream Camera", "0.3.3", "VManOP")]
 [assembly: MelonGame("Alta", "A Township Tale")]
 
 namespace ATTSmoothCamera
@@ -25,6 +26,8 @@ namespace ATTSmoothCamera
         DesktopControlSession desktop;
         Camera output, source;
         PlayerController player;
+        LocationChunk renderedChunk;
+        bool waitingForWorld;
         Transform firstPersonHead;
         readonly HeadRenderScope headScope = new HeadRenderScope();
         readonly HeadRenderScope photoScope = new HeadRenderScope();
@@ -83,7 +86,7 @@ namespace ATTSmoothCamera
             Camera.onPreCull += BeforeCamera;
             Camera.onPostRender += AfterCamera;
             initialized = true;
-            MelonLogger.Msg("Camera Updated 0.3.2 ready. F6 opens camera and optional desktop controls. Desktop gameplay starts off.");
+            MelonLogger.Msg("Camera Updated 0.3.3 ready. F6 opens camera and optional desktop controls. Desktop gameplay starts off.");
             if (newLibrary) Run(delegate {
                 library.UpsertPreset(new CameraPreset { Name = "Smooth view", Mode = 0 });
                 library.UpsertPreset(new CameraPreset { Name = "Full body", Mode = 1, Distance = 3.2f });
@@ -145,8 +148,17 @@ namespace ATTSmoothCamera
             }
             bool relocated = UpdateFollowTarget(current, eye);
             if (!enabled) { ReleaseOutput(); status = "Camera off. Enable it in F6 settings."; return; }
+            LocationChunk chunk = LocationChunk.ChunkWithLocalPlayer;
+            if (RenderLock.IsLocked || (current is PlayerCharacter && chunk != null && !chunk.IsFullyLoaded)) {
+                if (!waitingForWorld) MelonLogger.Msg("Streaming camera paused while the game loads the destination.");
+                waitingForWorld = true;
+                ReleaseOutput();
+                status = "Waiting for the destination to render...";
+                return;
+            }
+            bool renderChanged = waitingForWorld || chunk != renderedChunk;
             bool changed = player != current, sourceChanged = false;
-            if (changed || relocated || source == null || !source.gameObject.activeInHierarchy ||
+            if (changed || relocated || renderChanged || source == null || !source.gameObject.activeInHierarchy ||
                 source != current.Camera || Time.unscaledTime >= nextProbe) {
                 player = current;
                 if (changed || relocated) { leftTool = new Renderer[0]; rightTool = new Renderer[0]; nextTools = 0f; }
@@ -163,12 +175,17 @@ namespace ATTSmoothCamera
                 status = "Streaming pauses while the Prefabulator editor camera is active.";
                 return;
             }
-            if (source == null || !source.gameObject.activeInHierarchy) { ReleaseOutput(); status = "Waiting for your player camera..."; return; }
+            if (source == null || !source.gameObject.activeInHierarchy || source.cullingMask == 0) {
+                ReleaseOutput(); status = "Waiting for your player camera..."; return;
+            }
             if (mode != StreamMode.SmoothFirstPerson && !(current is PlayerCharacter) && !PathHasControl) {
                 ReleaseOutput(); status = "This view needs a VR character. Fly has no visible avatar."; return;
             }
             if (sourceChanged) seeded = false;
-            EnsureOutput(changed || sourceChanged);
+            EnsureOutput(changed || sourceChanged || renderChanged);
+            // The game can restore visible layers and clip distances after the same camera returns.
+            output.cullingMask = source.cullingMask;
+            output.farClipPlane = source.farClipPlane;
             if (!mirrorOwned) { mirrorBefore = XRSettings.showDeviceView; mirrorOwned = true; }
             XRSettings.showDeviceView = false;
             float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0f, 0.1f);
@@ -261,6 +278,11 @@ namespace ATTSmoothCamera
             output.fieldOfView = Safe(nextFov, 35f, 110f, 75f);
             EnsureCleanTarget();
             output.enabled = true;
+            if (waitingForWorld || relocated)
+                MelonLogger.Msg("Streaming camera rebound after travel. Player " + current.transform.position +
+                    ", head " + head + ", view " + next + ", layers " + output.cullingMask + ".");
+            waitingForWorld = false;
+            renderedChunk = chunk;
             lastHead = head;
             seeded = true;
             if (recording) RecordFrame();
@@ -448,6 +470,7 @@ namespace ATTSmoothCamera
         {
             EndRenderScope();
             firstPersonHead = null;
+            renderedFrame = -10;
             if (output != null) output.enabled = false;
             if (mirrorOwned && !EditorCameraActive(true)) { XRSettings.showDeviceView = mirrorBefore; mirrorOwned = false; }
             seeded = false; transitionActive = false;
